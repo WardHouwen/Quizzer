@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Klasquiz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+/* Layout: teacher workspace = paper sheet with a chalkboard-green accent; game screens = full-bleed chalkboard stage */
+:root {
+  --paper: #f3f5f2;
+  --surface: #ffffff;
+  --ink: #18221f;
+  --muted: #5a6762;
+  --line: #d9e0dc;
+  --accent: #1d6b57;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefe8;
+  --danger: #b8382a;
+  --danger-soft: #fbe5e1;
+  --ok: #1f8a4c;
+  --board: #183a33;
+  --board-2: #21493f;
+  --chalk: #f4f1e6;
+  --chalk-dim: #b9c7bf;
+  --a: #e85d43; --b: #2f7fd1; --c: #e8a920; --d: #6a5acd;
+  --right: #2aa45d; --wrong: #d2463a;
+  --f-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --r: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111816; --surface: #19221f; --ink: #e8eeeb; --muted: #9aa9a3; --line: #2c3834;
+    --accent: #5cc2a4; --accent-ink: #0d1f1a; --accent-soft: #1c3a32; --danger: #f08070; --danger-soft: #3a1f1b; --ok: #5cd08c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111816; --surface: #19221f; --ink: #e8eeeb; --muted: #9aa9a3; --line: #2c3834;
+  --accent: #5cc2a4; --accent-ink: #0d1f1a; --accent-soft: #1c3a32; --danger: #f08070; --danger-soft: #3a1f1b; --ok: #5cd08c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-body); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 2rem; font-weight: 800; }
+h2 { font-size: 1.4rem; font-weight: 800; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--c); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: 0.875rem; }
+.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); }
+[hidden] { display: none !important; }
+
+/* Buttons & fields */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: var(--surface);
+  padding: 9px 16px; border-radius: var(--r); cursor: pointer; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--accent-soft); }
+.btn.big { padding: 14px 24px; font-size: 1.1rem; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.field { display: grid; gap: 6px; }
+.input, select.input, textarea.input { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 10px 12px; }
+textarea.input { resize: vertical; min-height: 70px; }
+.input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row.end { justify-content: flex-end; }
+.row.between { justify-content: space-between; }
+.stack { display: grid; gap: 16px; }
+.stack.tight { gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 700; padding: 2px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.chip.grey { background: var(--line); color: var(--muted); }
+.chip.warn { background: var(--danger-soft); color: var(--danger); }
+.err { color: var(--danger); font-weight: 700; }
+
+/* Teacher shell */
+.shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+.top { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.top-in { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 20px; min-height: 60px; flex-wrap: wrap; padding-block: 8px; }
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 1.35rem; display: flex; align-items: center; gap: 8px; }
+.brand-mark { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 22px; height: 22px; }
+.brand-mark i { border-radius: 2px; }
+.brand-mark i:nth-child(1){background:var(--a)} .brand-mark i:nth-child(2){background:var(--b)} .brand-mark i:nth-child(3){background:var(--c)} .brand-mark i:nth-child(4){background:var(--d)}
+.nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.nav button { border: 0; background: transparent; padding: 8px 14px; border-radius: var(--r); cursor: pointer; font-weight: 700; color: var(--muted); }
+.nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.who { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 0.875rem; color: var(--muted); min-width: 0; }
+.who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.page { max-width: 1100px; width: 100%; margin: 0 auto; padding-block: 28px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.page-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+
+.subject { display: grid; gap: 12px; }
+.subject + .subject { margin-top: 28px; }
+.subject-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 8px; }
+.subject-head h2 { margin-right: auto; }
+.quiz-list { display: grid; gap: 8px; }
+.quiz-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.quiz-row .t { font-weight: 700; margin-right: auto; min-width: 0; }
+.empty { border: 1px dashed var(--line); border-radius: var(--r); padding: 18px; color: var(--muted); text-align: center; }
+
+/* Editor */
+.qcard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+.qcard-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qnum { font-family: var(--f-display); font-weight: 800; font-size: 1.1rem; margin-right: auto; }
+.opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 560px) { .opts { grid-template-columns: minmax(0, 1fr); } }
+.opt { display: flex; align-items: center; gap: 8px; border: 2px solid var(--line); border-radius: var(--r); padding: 4px 8px 4px 4px; background: var(--surface); }
+.opt.is-correct { border-color: var(--ok); }
+.opt .sw { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; flex: none; }
+.opt .sw svg { width: 16px; height: 16px; fill: #fff; }
+.opt input[type="text"] { border: 0; background: transparent; flex: 1; min-width: 0; padding: 6px 2px; }
+.opt input[type="text"]:focus { outline: none; }
+.opt label { font-size: 0.8rem; display: flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.sw-0 { background: var(--a); } .sw-1 { background: var(--b); } .sw-2 { background: var(--c); } .sw-3 { background: var(--d); }
+.savebar { position: sticky; bottom: 0; z-index: 4; margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; box-shadow: 0 -6px 24px rgb(0 0 0 / 0.06);
+  margin-bottom: env(safe-area-inset-bottom, 0px); }
+.codebox { font-family: var(--f-display); font-weight: 800; font-size: 1.6rem; letter-spacing: 0.08em; }
+.listline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
+.listline:first-child { border-top: 0; }
+.listline .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); cursor: pointer; user-select: none; }
+td.r, th.r { text-align: right; }
+tr:last-child td { border-bottom: 0; }
+.medal { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-weight: 800; font-size: 0.85rem; background: var(--line); }
+.medal.m1 { background: #e8b923; color: #3a2a00; } .medal.m2 { background: #c3cbd1; color: #26313a; } .medal.m3 { background: #cf8a4f; color: #2e1700; }
+
+/* Auth & landing */
+.center { min-height: 100vh; display: grid; place-items: center; padding-block: 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.landing { width: 100%; max-width: 980px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 760px) { .landing { grid-template-columns: minmax(0, 1fr); } }
+.join-card { background: var(--board); color: var(--chalk); border-radius: 18px; padding: 32px; display: grid; gap: 18px; align-content: start; }
+.join-card h1 { font-size: clamp(2rem, 6vw, 3.2rem); }
+.code-input { font-family: var(--f-display); font-weight: 800; font-size: 2rem; letter-spacing: 0.3em; text-align: center; width: 100%;
+  border-radius: 12px; border: 3px solid transparent; background: var(--chalk); color: var(--board); padding: 12px; }
+.code-input:focus { outline: none; border-color: var(--c); }
+
+/* Stage (game screens) */
+.stage { min-height: 100vh; background: var(--board); color: var(--chalk); display: flex; flex-direction: column;
+  padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background-image: radial-gradient(ellipse at 20% 0%, rgb(255 255 255 / 0.06), transparent 60%); }
+.stage .btn { background: var(--chalk); color: var(--board); border-color: var(--chalk); }
+.stage .btn.ghost { background: transparent; color: var(--chalk); border-color: rgb(244 241 230 / 0.3); }
+.stage-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-weight: 700; color: var(--chalk-dim); }
+.stage-top .grow { flex: 1; }
+.stage-main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 24px; width: 100%; max-width: 1200px; margin: 0 auto; padding-block: 16px; }
+.stage h1 { font-size: clamp(1.8rem, 4.5vw, 3.4rem); }
+.qtext { font-family: var(--f-display); font-weight: 800; font-size: clamp(1.5rem, 4vw, 3rem); line-height: 1.15; text-align: center; text-wrap: balance; overflow-wrap: anywhere; }
+.answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 520px) { .answers.phone { grid-template-columns: minmax(0, 1fr); } }
+.ans { border: 0; border-radius: 14px; color: #fff; padding: 18px 20px; min-height: 84px; display: flex; align-items: center; gap: 14px;
+  font-weight: 700; font-size: clamp(1.05rem, 2.2vw, 1.6rem); text-align: left; cursor: pointer; box-shadow: inset 0 -5px 0 rgb(0 0 0 / 0.2);
+  transition: transform 0.08s ease, opacity 0.2s ease; overflow-wrap: anywhere; min-width: 0; }
+.ans:active { transform: translateY(2px); }
+.ans svg { width: 30px; height: 30px; fill: #fff; flex: none; }
+.ans.dim { opacity: 0.28; }
+.ans.win { outline: 5px solid var(--chalk); outline-offset: 3px; }
+.ans[disabled] { cursor: default; }
+.ans .cnt { margin-left: auto; font-family: var(--f-display); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.ans-0 { background: var(--a); } .ans-1 { background: var(--b); } .ans-2 { background: var(--c); } .ans-3 { background: var(--d); }
+.timer { --p: 1; width: 100%; height: 10px; border-radius: 99px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
+.timer i { display: block; height: 100%; width: calc(var(--p) * 100%); background: var(--c); transition: width 0.25s linear; }
+.bigclock { font-family: var(--f-display); font-weight: 800; font-size: 3rem; font-variant-numeric: tabular-nums; width: 96px; height: 96px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--chalk); color: var(--board); flex: none; }
+.lobby { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: center; }
+@media (max-width: 760px) { .lobby { grid-template-columns: minmax(0, 1fr); } }
+.joinurl { font-size: clamp(1rem, 2.4vw, 1.5rem); color: var(--chalk-dim); overflow-wrap: anywhere; }
+.joinurl b { color: var(--chalk); }
+.bigcode { font-family: var(--f-display); font-weight: 800; font-size: clamp(3.5rem, 12vw, 8rem); letter-spacing: 0.06em; line-height: 1; }
+.qr { background: #fff; padding: 14px; border-radius: 14px; width: max-content; max-width: 100%; }
+.qr img, .qr canvas { display: block; max-width: 100%; height: auto; }
+.names { display: flex; flex-wrap: wrap; gap: 8px; }
+.names span { background: rgb(255 255 255 / 0.1); padding: 6px 14px; border-radius: 99px; font-weight: 700; animation: pop 0.3s ease; }
+@keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.feedback { border-radius: 18px; padding: 32px 24px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+.feedback.good { background: var(--right); color: #fff; }
+.feedback.bad { background: var(--wrong); color: #fff; }
+.feedback.wait { background: var(--board-2); }
+.feedback .huge { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.4rem, 9vw, 4.5rem); line-height: 1; }
+.feedback svg { width: 64px; height: 64px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.scorepill { display: inline-flex; gap: 8px; align-items: baseline; background: rgb(0 0 0 / 0.25); padding: 6px 16px; border-radius: 99px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.namegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.namebtn { border: 2px solid rgb(244 241 230 / 0.25); background: var(--board-2); color: var(--chalk); padding: 16px 12px; border-radius: 12px;
+  font-weight: 700; font-size: 1.05rem; cursor: pointer; overflow-wrap: anywhere; }
+.namebtn:hover { border-color: var(--c); }
+.stage .input { background: var(--chalk); color: var(--board); border-color: transparent; }
+.board-list { display: grid; gap: 8px; max-width: 760px; width: 100%; margin: 0 auto; }
+.board-row { display: flex; align-items: center; gap: 14px; background: var(--board-2); border-radius: 12px; padding: 12px 18px; font-size: clamp(1rem, 2.2vw, 1.4rem); font-weight: 700; }
+.board-row .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.board-row .s { font-family: var(--f-display); font-variant-numeric: tabular-nums; }
+
+/* Podium */
+.podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; max-width: 760px; width: 100%; margin: 0 auto; }
+.pod { display: grid; gap: 8px; justify-items: center; text-align: center; min-width: 0; }
+.pod .who-n { font-family: var(--f-display); font-weight: 800; font-size: clamp(1.1rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.pod .pts { color: var(--chalk-dim); font-weight: 700; font-variant-numeric: tabular-nums; }
+.pod .block { width: 100%; border-radius: 12px 12px 0 0; display: grid; place-items: start center; padding-top: 12px;
+  font-family: var(--f-display); font-weight: 800; font-size: clamp(2rem, 6vw, 4rem); color: rgb(0 0 0 / 0.55);
+  transform-origin: bottom; animation: rise 0.9s cubic-bezier(.2,.8,.2,1) both; }
+.pod.p1 .block { height: 240px; background: #e8b923; animation-delay: 1.4s; }
+.pod.p2 .block { height: 170px; background: #c3cbd1; animation-delay: 0.7s; }
+.pod.p3 .block { height: 120px; background: #cf8a4f; animation-delay: 0s; }
+.pod.p1 .who-n, .pod.p1 .pts { animation: fadein 0.5s ease 2.1s both; }
+.pod.p2 .who-n, .pod.p2 .pts { animation: fadein 0.5s ease 1.4s both; }
+.pod.p3 .who-n, .pod.p3 .pts { animation: fadein 0.5s ease 0.7s both; }
+@keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (max-width: 520px) { .pod.p1 .block { height: 160px; } .pod.p2 .block { height: 115px; } .pod.p3 .block { height: 80px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+.overlay { position: fixed; inset: 0; z-index: 50; overflow: auto; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 99;
+  background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 99px; font-weight: 700; max-width: calc(100% - 32px); box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); }
+.toast.bad { background: var(--danger); color: #fff; }
+.spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details summary { cursor: pointer; font-weight: 700; }
+pre.fmt { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; font-size: 0.85rem; overflow-x: auto; margin: 0; }
+</style>
+</head>
+<body>
+<div id="app"><div class="center"><div class="spinner" aria-label="Laden"></div></div></div>
+<script>
+"use strict";
+const SB_URL = "https://quxqvtusuurqolrzoobt.supabase.co";
+const SB_KEY = "sb_publishable_0aintT_kRmw_RFxG9G_IfA_YVXnV9_3";
+const sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+const app = document.getElementById("app");
+const LETTERS = ["A", "B", "C", "D"];
+const SHAPES = [
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22.5 20.5h-21z"/></svg>',
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5 22.5 12 12 22.5 1.5 12z"/></svg>',
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>',
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="2"/></svg>'
+];
+const ICON_OK = '<svg viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6"/></svg>';
+const ICON_NO = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
+/* ---------- tiny helpers ---------- */
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "html") el.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (["value", "checked", "disabled", "selected"].includes(k)) el[k] = v;
+    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+function mount(...nodes) { app.replaceChildren(...nodes); window.scrollTo(0, 0); }
+let toastTimer;
+function toast(msg, bad) {
+  document.querySelectorAll(".toast").forEach(t => t.remove());
+  const t = h("div", { class: "toast" + (bad ? " bad" : ""), role: "status" }, msg);
+  document.body.append(t);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3200);
+}
+let loops = [];
+function every(ms, fn) {
+  let stop = false, t;
+  const run = async () => { if (stop) return; try { await fn(); } catch (e) { console.error(e); } if (!stop) t = setTimeout(run, ms); };
+  t = setTimeout(run, 0);
+  const s = () => { stop = true; clearTimeout(t); };
+  loops.push(s); return s;
+}
+function stopLoops() { loops.forEach(s => s()); loops = []; }
+function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function load(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } }
+function fmtDate(s) { if (!s) return ""; const d = new Date(s); return d.toLocaleDateString("nl-BE", { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit" }); }
+function fmtNum(n) { return Math.round(n).toLocaleString("nl-BE"); }
+function joinUrl(code) { return location.origin + location.pathname + "?code=" + code; }
+function isHosted() { return location.protocol.startsWith("http"); }
+function confirmBtn(label, onConfirm, cls = "btn danger") {
+  const b = h("button", { class: cls, type: "button" }, label);
+  let armed = false, t;
+  b.addEventListener("click", async () => {
+    if (!armed) { armed = true; b.classList.add("armed"); b.textContent = "Zeker? Klik opnieuw"; t = setTimeout(() => { armed = false; b.classList.remove("armed"); b.textContent = label; }, 3000); return; }
+    clearTimeout(t); b.disabled = true; await onConfirm(); b.disabled = false;
+  });
+  return b;
+}
+async function rpc(name, args) {
+  const { data, error } = await sb.rpc(name, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+function must(res) { if (res.error) throw new Error(res.error.message); return res.data; }
+function ansButton(i, text, extra = {}) {
+  return h("button", Object.assign({ class: "ans ans-" + i, type: "button", "aria-label": LETTERS[i] + ": " + text }, extra),
+    h("span", { html: SHAPES[i] }), h("span", null, text));
+}
+function podium(rows) {
+  const top = [rows[1], rows[0], rows[2]];
+  const cls = ["p2", "p1", "p3"], place = [2, 1, 3];
+  return h("div", { class: "podium" }, top.map((r, i) => h("div", { class: "pod " + cls[i] },
+    h("div", { class: "who-n" }, r ? r.name : "–"),
+    h("div", { class: "pts" }, r ? fmtNum(r.score) + " punten" : ""),
+    h("div", { class: "block" }, place[i]))));
+}
+
+/* ---------- state ---------- */
+let me = null; // { id, email }
+
+/* ---------- boot ---------- */
+async function boot() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const { data } = await sb.auth.getSession();
+  me = data.session ? { id: data.session.user.id, email: (data.session.user.email || "").toLowerCase() } : null;
+  if (code) { history.replaceState(null, "", location.pathname); return studentCode(code); }
+  if (me) return teacherHome();
+  landing();
+}
+sb.auth.onAuthStateChange((ev, session) => {
+  if (ev === "SIGNED_OUT") { me = null; }
+  if (session) me = { id: session.user.id, email: (session.user.email || "").toLowerCase() };
+});
+
+/* =========================================================
+   LANDING + STUDENT
+   ========================================================= */
+function landing() {
+  stopLoops();
+  const resume = load("kq_play");
+  const codeIn = h("input", { class: "code-input", inputmode: "numeric", autocomplete: "off", maxlength: "6", placeholder: "000000", "aria-label": "Spelcode", id: "land-code" });
+  const err = h("p", { class: "err", hidden: true });
+  const form = h("form", { class: "stack", onsubmit: async e => {
+    e.preventDefault();
+    const c = codeIn.value.replace(/\D/g, "");
+    if (c.length !== 6) { err.hidden = false; err.textContent = "De code heeft 6 cijfers."; return; }
+    studentCode(c);
+  } }, codeIn, h("button", { class: "btn big", type: "submit", style: { background: "var(--c)", color: "#2b1d00", borderColor: "var(--c)" } }, "Doe mee"), err);
+  mount(h("div", { class: "center" }, h("div", { class: "landing" },
+    h("section", { class: "join-card" },
+      h("div", { class: "brand" }, h("span", { class: "brand-mark" }, h("i"), h("i"), h("i"), h("i")), "Klasquiz"),
+      h("h1", null, "Vul de code in die op het bord staat"),
+      form,
+      resume && h("button", { class: "btn ghost", type: "button", style: { color: "var(--chalk)", borderColor: "rgb(244 241 230 / .3)" },
+        onclick: () => resume.mode === "live" ? studentLive(resume) : studentSelf(resume) }, "Verder spelen als " + resume.name)
+    ),
+    h("section", { class: "panel stack", style: { alignContent: "start" } },
+      h("p", { class: "label" }, "Voor leerkrachten"),
+      h("h2", null, "Maak quizzen, speel ze live in de klas en volg de scores van je leerlingen."),
+      h("p", { class: "muted" }, "Log in om je vakken, quizzen en klaslijst te beheren."),
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", type: "button", onclick: () => authScreen("login") }, "Inloggen"),
+        h("button", { class: "btn", type: "button", onclick: () => authScreen("signup") }, "Account maken"))
+    )
+  )));
+  setTimeout(() => codeIn.focus(), 50);
+}
+
+function stageShell(top, ...main) {
+  return h("div", { class: "stage" }, h("div", { class: "stage-top" }, top), h("div", { class: "stage-main" }, main));
+}
+
+async function studentCode(code) {
+  stopLoops();
+  mount(stageShell([h("span", null, "Klasquiz")], h("div", { class: "spinner", style: { margin: "0 auto" } })));
+  let info;
+  try { info = await rpc("kq2_lookup", { p_code: code }); } catch (e) { info = { error: "Geen verbinding. Controleer je internet en probeer opnieuw." }; }
+  if (info.error) {
+    mount(stageShell([h("span", null, "Klasquiz")],
+      h("h1", { style: { textAlign: "center" } }, info.error),
+      h("div", { class: "row", style: { justifyContent: "center" } }, h("button", { class: "btn big", onclick: landing }, "Andere code ingeven"))));
+    return;
+  }
+  studentPick(code, info);
+}
+
+function studentPick(code, info) {
+  const search = h("input", { class: "input", placeholder: "Zoek je naam…", id: "pick-search", "aria-label": "Zoek je naam" });
+  const grid = h("div", { class: "namegrid" });
+  const err = h("p", { class: "err", hidden: true });
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    grid.replaceChildren(...info.students.filter(s => s.name.toLowerCase().includes(q))
+      .map(s => h("button", { class: "namebtn", type: "button", onclick: () => doJoin(s.id, null) }, s.name)));
+  };
+  search.addEventListener("input", draw);
+  const newName = h("input", { class: "input", placeholder: "Voornaam + eerste letter achternaam", maxlength: "40", id: "pick-new" });
+  const doJoin = async (id, name) => {
+    err.hidden = true;
+    let r;
+    try { r = await rpc("kq2_join", { p_code: code, p_student: id, p_name: name }); } catch (e) { r = { error: "Geen verbinding. Probeer opnieuw." }; }
+    if (r.error) { err.hidden = false; err.textContent = r.error; return; }
+    const ctx = { token: r.token, mode: r.mode, name: r.name, title: r.title };
+    store("kq_play", ctx);
+    r.mode === "live" ? studentLive(ctx) : studentSelf(ctx);
+  };
+  draw();
+  mount(stageShell([h("span", { class: "grow" }, info.title), h("button", { class: "btn ghost", onclick: landing }, "Terug")],
+    h("h1", null, "Wie ben jij?"),
+    info.students.length > 8 ? search : null,
+    info.students.length ? grid : h("p", { class: "joinurl" }, "Je leerkracht heeft nog geen klaslijst. Typ hieronder je naam."),
+    h("details", { open: !info.students.length },
+      h("summary", null, "Mijn naam staat er niet bij"),
+      h("form", { class: "row", style: { marginTop: "10px" }, onsubmit: e => { e.preventDefault(); if (newName.value.trim()) doJoin(null, newName.value.trim()); } },
+        h("div", { style: { flex: "1", minWidth: "200px" } }, newName), h("button", { class: "btn", type: "submit" }, "Doe mee"))),
+    err));
+}
+
+function studentLive(ctx) {
+  stopLoops();
+  let key = "", deadline = 0, local = {};
+  const topScore = h("span", { class: "scorepill" }, "0 punten");
+  const holder = h("div", { class: "stack" });
+  mount(stageShell([h("span", { class: "grow" }, ctx.name), topScore], holder));
+
+  const render = (s) => {
+    topScore.textContent = fmtNum(s.score) + " punten";
+    if (s.error) { holder.replaceChildren(h("h1", null, s.error), h("button", { class: "btn big", onclick: () => { store("kq_play", null); landing(); } }, "Terug")); stopLoops(); return; }
+    const answered = s.answered || local[s.question?.id] != null;
+    const k = [s.status, s.index, answered ? 1 : 0].join(":");
+    if (s.status === "question") deadline = Date.now() + s.remaining * 1000;
+    if (k === key) return;
+    key = k;
+    if (s.status === "lobby") {
+      holder.replaceChildren(h("div", { class: "feedback wait" },
+        h("div", { class: "huge" }, "Je bent binnen!"),
+        h("p", { style: { fontSize: "1.2rem" } }, "Kijk naar het bord. De quiz begint zo."),
+        h("p", { class: "muted", style: { color: "var(--chalk-dim)" } }, s.players + " leerlingen doen mee")));
+    } else if (s.status === "question" && !answered) {
+      const bar = h("div", { class: "timer" }, h("i"));
+      const q = s.question;
+      const btns = q.options.map((o, i) => ansButton(i, o, { onclick: async () => {
+        local[q.id] = i; key = ""; render(Object.assign({}, s, { answered: true }));
+        try { const r = await rpc("kq2_live_answer", { p_token: ctx.token, p_question: q.id, p_choice: i }); if (r.error) toast(r.error, true); }
+        catch (e) { toast("Je antwoord kwam niet door. Controleer je internet.", true); delete local[q.id]; key = ""; }
+      } }));
+      holder.replaceChildren(
+        h("p", { class: "label", style: { color: "var(--chalk-dim)", textAlign: "center" } }, "Vraag " + (s.index + 1) + " van " + s.total),
+        h("div", { class: "qtext", style: { fontSize: "clamp(1.3rem,5vw,2.2rem)" } }, q.text), bar,
+        h("div", { class: "answers phone" }, btns));
+      every(250, () => {
+        const left = Math.max(0, deadline - Date.now());
+        bar.style.setProperty("--p", Math.min(1, left / (q.time_limit * 1000)));
+        if (left <= 0) btns.forEach(b => b.disabled = true);
+      });
+    } else if (s.status === "question") {
+      holder.replaceChildren(h("div", { class: "feedback wait" },
+        h("div", { class: "huge" }, "Antwoord ontvangen"),
+        h("p", { style: { fontSize: "1.2rem" } }, "Even wachten tot iedereen geantwoord heeft…")));
+    } else if (s.status === "reveal") {
+      const good = s.was_correct;
+      const right = s.question.options[s.correct_index];
+      holder.replaceChildren(h("div", { class: "feedback " + (good ? "good" : "bad") },
+        h("span", { html: good ? ICON_OK : ICON_NO }),
+        h("div", { class: "huge" }, good ? "Juist!" : (s.answered ? "Fout" : "Te laat")),
+        good ? h("p", { style: { fontSize: "1.4rem", fontWeight: 700 } }, "+" + fmtNum(s.points) + " punten")
+             : h("p", { style: { fontSize: "1.2rem" } }, "Het juiste antwoord was: ", h("b", null, right)),
+        h("span", { class: "scorepill" }, "Je staat op plaats " + s.rank + " van " + s.players)));
+    } else if (s.status === "finished") {
+      store("kq_play", null);
+      holder.replaceChildren(h("div", { class: "feedback wait" },
+        h("div", { class: "huge" }, "Plaats " + s.rank),
+        h("p", { style: { fontSize: "1.3rem" } }, "Je haalde " + fmtNum(s.score) + " punten. Goed gedaan, " + ctx.name + "!")),
+        h("div", { class: "row", style: { justifyContent: "center" } }, h("button", { class: "btn big", onclick: landing }, "Sluiten")));
+      stopLoops();
+    }
+  };
+  every(1000, async () => {
+    const s = await rpc("kq2_live_state", { p_token: ctx.token });
+    // keep the timer loop when re-rendering the same question
+    render(s);
+  });
+}
+
+function studentSelf(ctx) {
+  stopLoops();
+  const topScore = h("span", { class: "scorepill" }, "");
+  const holder = h("div", { class: "stack" });
+  mount(stageShell([h("span", { class: "grow" }, ctx.title + " · " + ctx.name), topScore], holder));
+  const next = async () => {
+    holder.replaceChildren(h("div", { class: "spinner", style: { margin: "0 auto" } }));
+    let s;
+    try { s = await rpc("kq2_self_next", { p_token: ctx.token }); } catch (e) { s = { error: "Geen verbinding. Controleer je internet." }; }
+    if (s.error) { holder.replaceChildren(h("h1", null, s.error), h("button", { class: "btn big", onclick: next }, "Opnieuw proberen")); return; }
+    topScore.textContent = fmtNum(s.score) + " punten";
+    if (s.done) {
+      store("kq_play", null);
+      holder.replaceChildren(h("div", { class: "feedback wait" },
+        h("div", { class: "huge" }, s.right + " / " + s.total + " juist"),
+        h("p", { style: { fontSize: "1.3rem" } }, "Je haalde " + fmtNum(s.score) + " punten. Je leerkracht ziet je score."),
+      ), h("div", { class: "row", style: { justifyContent: "center" } }, h("button", { class: "btn big", onclick: landing }, "Sluiten")));
+      return;
+    }
+    const q = s.question;
+    const btns = q.options.map((o, i) => ansButton(i, o, { onclick: async () => {
+      btns.forEach(b => b.disabled = true);
+      let r;
+      try { r = await rpc("kq2_self_answer", { p_token: ctx.token, p_question: q.id, p_choice: i }); } catch (e) { r = { error: "Je antwoord kwam niet door. Probeer opnieuw." }; }
+      if (r.error) { toast(r.error, true); btns.forEach(b => b.disabled = false); return; }
+      topScore.textContent = fmtNum(r.score) + " punten";
+      btns.forEach((b, j) => { if (j === r.correct_index) b.classList.add("win"); else b.classList.add("dim"); });
+      const fb = h("div", { class: "feedback " + (r.correct ? "good" : "bad") },
+        h("span", { html: r.correct ? ICON_OK : ICON_NO }),
+        h("div", { class: "huge" }, r.correct ? "Juist!" : "Fout"),
+        r.correct ? h("p", { style: { fontSize: "1.3rem", fontWeight: 700 } }, "+" + fmtNum(r.points) + " punten")
+                  : h("p", { style: { fontSize: "1.15rem" } }, "Het juiste antwoord is: ", h("b", null, q.options[r.correct_index])),
+        h("button", { class: "btn big", style: { background: "#fff", color: "var(--board)", borderColor: "#fff" }, onclick: next },
+          s.index + 1 >= s.total ? "Bekijk je resultaat" : "Volgende vraag"));
+      holder.append(fb); fb.scrollIntoView({ behavior: "smooth", block: "center" });
+    } }));
+    holder.replaceChildren(
+      h("p", { class: "label", style: { color: "var(--chalk-dim)", textAlign: "center" } }, "Vraag " + (s.index + 1) + " van " + s.total),
+      h("div", { class: "qtext", style: { fontSize: "clamp(1.3rem,5vw,2.2rem)" } }, q.text),
+      h("div", { class: "answers phone" }, btns));
+  };
+  next();
+}
+
+/* =========================================================
+   AUTH
+   ========================================================= */
+function authScreen(mode) {
+  stopLoops();
+  const email = h("input", { class: "input", type: "email", autocomplete: "email", required: true, id: "auth-email" });
+  const pass = h("input", { class: "input", type: "password", autocomplete: mode === "signup" ? "new-password" : "current-password", required: true, minlength: "8", id: "auth-pass" });
+  const msg = h("p", { hidden: true });
+  const btn = h("button", { class: "btn primary big", type: "submit" }, mode === "signup" ? "Account maken" : "Inloggen");
+  const form = h("form", { class: "panel stack", style: { width: "100%", maxWidth: "420px" }, onsubmit: async e => {
+    e.preventDefault(); btn.disabled = true; msg.hidden = true;
+    try {
+      if (mode === "signup") {
+        const r = await sb.auth.signUp({ email: email.value.trim(), password: pass.value, options: { emailRedirectTo: isHosted() ? location.origin + location.pathname : undefined } });
+        if (r.error) throw r.error;
+        if (r.data.session) { me = { id: r.data.user.id, email: r.data.user.email.toLowerCase() }; return teacherHome(); }
+        msg.hidden = false; msg.className = ""; msg.textContent = "Bijna klaar. Open de mail die we je stuurden en klik op de bevestigingslink. Daarna kun je inloggen.";
+      } else {
+        const r = await sb.auth.signInWithPassword({ email: email.value.trim(), password: pass.value });
+        if (r.error) throw r.error;
+        me = { id: r.data.user.id, email: r.data.user.email.toLowerCase() };
+        return teacherHome();
+      }
+    } catch (err) {
+      msg.hidden = false; msg.className = "err";
+      const m = String(err.message || err);
+      msg.textContent = /Invalid login/i.test(m) ? "E-mailadres of wachtwoord klopt niet."
+        : /not confirmed/i.test(m) ? "Je e-mailadres is nog niet bevestigd. Klik eerst op de link in je mailbox."
+        : /already registered/i.test(m) ? "Er bestaat al een account met dit e-mailadres. Log in."
+        : /Password should/i.test(m) ? "Kies een wachtwoord van minstens 8 tekens."
+        : m;
+    } finally { btn.disabled = false; }
+  } },
+    h("div", { class: "brand" }, h("span", { class: "brand-mark" }, h("i"), h("i"), h("i"), h("i")), "Klasquiz"),
+    h("h2", null, mode === "signup" ? "Account voor leerkrachten" : "Inloggen als leerkracht"),
+    h("label", { class: "field" }, h("span", { class: "label" }, "E-mailadres"), email),
+    h("label", { class: "field" }, h("span", { class: "label" }, "Wachtwoord"), pass),
+    btn, msg,
+    h("div", { class: "row between small" },
+      h("button", { class: "btn ghost", type: "button", onclick: () => authScreen(mode === "signup" ? "login" : "signup") }, mode === "signup" ? "Ik heb al een account" : "Nog geen account?"),
+      h("button", { class: "btn ghost", type: "button", onclick: landing }, "Terug")));
+  mount(h("div", { class: "center" }, form));
+  setTimeout(() => email.focus(), 50);
+}
+
+/* =========================================================
+   TEACHER
+   ========================================================= */
+let tab = "quizzen";
+function teacherShell(content) {
+  const navBtn = (id, label) => h("button", { type: "button", "aria-current": tab === id ? "page" : null, onclick: () => { tab = id; teacherHome(); } }, label);
+  return h("div", { class: "shell" },
+    h("header", { class: "top" }, h("div", { class: "top-in" },
+      h("div", { class: "brand" }, h("span", { class: "brand-mark" }, h("i"), h("i"), h("i"), h("i")), "Klasquiz"),
+      h("nav", { class: "nav", "aria-label": "Hoofdmenu" }, navBtn("quizzen", "Vakken & quizzen"), navBtn("klas", "Klaslijst"), navBtn("scores", "Scores")),
+      h("div", { class: "who" }, h("span", null, me.email),
+        h("button", { class: "btn ghost small", type: "button", onclick: async () => { await sb.auth.signOut(); me = null; landing(); } }, "Uitloggen")))),
+    h("main", { class: "page" }, content));
+}
+function loadingPage() { mount(teacherShell(h("div", { class: "spinner" }))); }
+function teacherHome() {
+  stopLoops();
+  if (!me) return authScreen("login");
+  if (tab === "klas") return classView();
+  if (tab === "scores") return scoresView();
+  return quizzesView();
+}
+
+async function fetchAll() {
+  const [subjects, quizzes, shares] = await Promise.all([
+    sb.from("kq_subjects").select("id, owner_id, name, created_at").order("created_at"),
+    sb.from("kq_quizzes").select("id, owner_id, subject_id, title, created_at, kq_questions(count)").order("created_at"),
+    sb.from("kq_shares").select("quiz_id, email, role").eq("email", me.email)
+  ]);
+  return { subjects: must(subjects), quizzes: must(quizzes), myShares: must(shares) };
+}
+function qCount(q) { return q.kq_questions && q.kq_questions[0] ? q.kq_questions[0].count : 0; }
+
+async function quizzesView() {
+  loadingPage();
+  let d;
+  try { d = await fetchAll(); } catch (e) { mount(teacherShell(h("p", { class: "err" }, "Laden mislukt: " + e.message))); return; }
+  const ownSubjects = d.subjects.filter(s => s.owner_id === me.id);
+  const own = d.quizzes.filter(q => q.owner_id === me.id);
+  const shared = d.quizzes.filter(q => q.owner_id !== me.id);
+  const roleOf = id => (d.myShares.find(s => s.quiz_id === id) || {}).role || "view";
+  const subjName = id => (d.subjects.find(s => s.id === id) || {}).name || "";
+
+  const newSubj = h("input", { class: "input", placeholder: "Bv. Aardrijkskunde", maxlength: "60", id: "new-subject" });
+  const addSubject = h("form", { class: "row", onsubmit: async e => {
+    e.preventDefault(); const n = newSubj.value.trim(); if (!n) return;
+    try { must(await sb.from("kq_subjects").insert({ name: n })); toast("Vak toegevoegd"); quizzesView(); } catch (err) { toast(err.message, true); }
+  } }, h("div", { style: { flex: "1", minWidth: "200px" } }, newSubj), h("button", { class: "btn primary", type: "submit" }, "Vak toevoegen"));
+
+  const quizRow = (q, role) => {
+    const n = qCount(q);
+    return h("div", { class: "quiz-row" },
+      h("div", { class: "t" }, q.title, h("div", { class: "small muted" }, n + (n === 1 ? " vraag" : " vragen"),
+        role !== "owner" ? " · uit " + subjName(q.subject_id) : "")),
+      role === "edit" && h("span", { class: "chip" }, "Mag bewerken"),
+      role === "view" && h("span", { class: "chip grey" }, "Bekijken en spelen"),
+      h("button", { class: "btn", type: "button", onclick: () => editorView(q.id) }, role === "view" ? "Bekijken" : "Bewerken"),
+      h("button", { class: "btn", type: "button", disabled: !n, onclick: () => editorView(q.id, "self") }, "Zelfstandig"),
+      h("button", { class: "btn primary", type: "button", disabled: !n, onclick: () => hostView(q.id) }, "Start live"));
+  };
+
+  const subjectBlock = s => {
+    const qs = own.filter(q => q.subject_id === s.id);
+    const nameIn = h("input", { class: "input", value: s.name, maxlength: "60", style: { maxWidth: "260px" }, id: "subj-" + s.id });
+    const head = h("div", { class: "subject-head" }, h("h2", null, s.name),
+      h("button", { class: "btn ghost small", type: "button", onclick: () => head.replaceWith(editHead) }, "Naam wijzigen"),
+      h("button", { class: "btn small", type: "button", onclick: async () => {
+        try { const q = must(await sb.from("kq_quizzes").insert({ subject_id: s.id, title: "Nieuwe quiz" }).select().single()); editorView(q.id); } catch (e) { toast(e.message, true); }
+      } }, "+ Nieuwe quiz"));
+    const editHead = h("form", { class: "subject-head", onsubmit: async e => {
+      e.preventDefault(); try { must(await sb.from("kq_subjects").update({ name: nameIn.value.trim() }).eq("id", s.id)); quizzesView(); } catch (err) { toast(err.message, true); }
+    } }, nameIn, h("button", { class: "btn primary small", type: "submit" }, "Bewaren"),
+      confirmBtn("Vak verwijderen", async () => { try { must(await sb.from("kq_subjects").delete().eq("id", s.id)); toast("Vak verwijderd"); quizzesView(); } catch (e) { toast(e.message, true); } }),
+      h("button", { class: "btn ghost small", type: "button", onclick: () => editHead.replaceWith(head) }, "Annuleren"));
+    return h("section", { class: "subject" }, head,
+      h("div", { class: "quiz-list" }, qs.length ? qs.map(q => quizRow(q, "owner")) : h("div", { class: "empty" }, "Nog geen quizzen in dit vak.")));
+  };
+
+  mount(teacherShell([
+    h("div", { class: "page-head" }, h("div", { class: "stack tight" }, h("p", { class: "label" }, "Jouw quizzen"), h("h1", null, "Vakken & quizzen")),
+      h("div", { style: { width: "100%", maxWidth: "460px" } }, addSubject)),
+    ownSubjects.length ? ownSubjects.map(subjectBlock) : h("div", { class: "empty" }, "Begin met een vak, bijvoorbeeld Geschiedenis. Daarna maak je er quizzen onder."),
+    shared.length ? h("section", { class: "subject", style: { marginTop: "40px" } },
+      h("div", { class: "subject-head" }, h("h2", null, "Gedeeld met mij")),
+      h("div", { class: "quiz-list" }, shared.map(q => quizRow(q, roleOf(q.id))))) : null
+  ]));
+}
+
+/* ---------- Class list ---------- */
+async function classView() {
+  loadingPage();
+  let students;
+  try { students = must(await sb.from("kq_students").select("id, name").eq("owner_id", me.id).order("name")); } catch (e) { mount(teacherShell(h("p", { class: "err" }, e.message))); return; }
+  const ta = h("textarea", { class: "input", rows: "6", placeholder: "Lena V.\nMo B.\nSara D.", id: "class-add" });
+  const list = h("div", null, students.length ? students.map(s => {
+    const name = h("input", { class: "input", value: s.name, maxlength: "40", id: "st-" + s.id });
+    return h("div", { class: "listline" }, h("div", { class: "grow" }, name),
+      h("button", { class: "btn small", type: "button", onclick: async () => {
+        try { must(await sb.from("kq_students").update({ name: name.value.trim() }).eq("id", s.id)); toast("Naam bewaard"); } catch (e) { toast(/duplicate/.test(e.message) ? "Die naam staat al in de lijst." : e.message, true); }
+      } }, "Bewaren"),
+      confirmBtn("Verwijderen", async () => { try { must(await sb.from("kq_students").delete().eq("id", s.id)); classView(); } catch (e) { toast(e.message, true); } }, "btn danger small"));
+  }) : h("div", { class: "empty" }, "Nog geen leerlingen. Voeg ze rechts toe, of laat ze zelf hun naam typen bij het meespelen."));
+  mount(teacherShell([
+    h("div", { class: "page-head" }, h("div", { class: "stack tight" }, h("p", { class: "label" }, "Klaslijst"), h("h1", null, students.length + " leerlingen"))),
+    h("div", { class: "grid2" },
+      h("div", { class: "panel" }, list),
+      h("form", { class: "panel stack", onsubmit: async e => {
+        e.preventDefault();
+        const names = [...new Set(ta.value.split(/\n/).map(x => x.trim()).filter(Boolean))].filter(n => !students.some(s => s.name.toLowerCase() === n.toLowerCase()));
+        if (!names.length) return toast("Geen nieuwe namen gevonden.", true);
+        try { must(await sb.from("kq_students").insert(names.map(name => ({ name: name.slice(0, 40) })))); toast(names.length + " leerlingen toegevoegd"); classView(); } catch (err) { toast(err.message, true); }
+      } },
+        h("h3", null, "Leerlingen toevoegen"),
+        h("p", { class: "small muted" }, "Eén naam per lijn. Gebruik voornaam en de eerste letter van de achternaam, zo bewaar je zo weinig mogelijk persoonsgegevens."),
+        ta, h("button", { class: "btn primary", type: "submit" }, "Toevoegen"),
+        h("p", { class: "small muted" }, "Leerlingen loggen niet in. Ze kiezen hun naam uit deze lijst wanneer ze een code ingeven. Wie er niet bij staat, kan zijn naam typen en wordt dan automatisch toegevoegd.")))
+  ]));
+}
+
+/* ---------- Quiz editor ---------- */
+function parseImport(text) {
+  const blocks = text.replace(/\r/g, "").split(/\n\s*\n/).map(b => b.split("\n").map(l => l.trim()).filter(Boolean)).filter(b => b.length >= 3);
+  return blocks.map(b => {
+    const qtext = b[0].replace(/^\d+[\.\)]\s*/, "");
+    let correct = 0;
+    const options = b.slice(1, 5).map((l, i) => {
+      let s = l;
+      if (s.startsWith("*")) { correct = i; s = s.slice(1).trim(); }
+      s = s.replace(/^([a-dA-D][\.\)]|-)\s*/, "");
+      if (s.startsWith("*")) { correct = i; s = s.slice(1).trim(); }
+      return s;
+    });
+    return { id: null, text: qtext, options: [...options, "", "", "", ""].slice(0, 4), correct, time_limit: 20 };
+  });
+}
+
+async function editorView(quizId, focus) {
+  loadingPage();
+  let quiz, qs, shares = [], assigns = [], role;
+  try {
+    quiz = must(await sb.from("kq_quizzes").select("*").eq("id", quizId).single());
+    qs = must(await sb.from("kq_questions").select("*").eq("quiz_id", quizId).order("position").order("id"));
+    role = quiz.owner_id === me.id ? "owner" : ((must(await sb.from("kq_shares").select("role").eq("quiz_id", quizId).eq("email", me.email)))[0] || {}).role || "view";
+    if (role === "owner") shares = must(await sb.from("kq_shares").select("*").eq("quiz_id", quizId).order("created_at"));
+    assigns = must(await sb.from("kq_assignments").select("*").eq("quiz_id", quizId).eq("owner_id", me.id).order("created_at", { ascending: false }));
+  } catch (e) { mount(teacherShell(h("p", { class: "err" }, "Laden mislukt: " + e.message))); return; }
+  const ro = role === "view";
+  let items = qs.map(q => ({ id: q.id, text: q.text, options: [...q.options, "", "", "", ""].slice(0, 4), correct: q.correct, time_limit: q.time_limit }));
+  const originalIds = qs.map(q => q.id);
+  let dirty = false;
+  const markDirty = () => { dirty = true; saveState.textContent = "Niet bewaarde wijzigingen"; saveState.className = "small err"; };
+
+  const title = h("input", { class: "input", value: quiz.title, maxlength: "100", disabled: ro, id: "quiz-title", style: { fontFamily: "var(--f-display)", fontWeight: 800, fontSize: "1.4rem" }, oninput: markDirty });
+  const qWrap = h("div", { class: "stack" });
+  const saveState = h("span", { class: "small muted" }, "Alles bewaard");
+
+  const drawQs = () => {
+    qWrap.replaceChildren(...(items.length ? items.map((it, idx) => {
+      const opts = it.options.map((o, i) => h("div", { class: "opt" + (it.correct === i ? " is-correct" : "") },
+        h("span", { class: "sw sw-" + i, html: SHAPES[i] }),
+        h("input", { type: "text", value: o, maxlength: "120", placeholder: i < 2 ? "Antwoord " + LETTERS[i] : "Antwoord " + LETTERS[i] + " (optioneel)", disabled: ro, id: "o-" + idx + "-" + i, "aria-label": "Antwoord " + LETTERS[i],
+          oninput: e => { it.options[i] = e.target.value; markDirty(); } }),
+        h("label", null, h("input", { type: "radio", name: "c-" + idx, checked: it.correct === i, disabled: ro, onchange: () => { it.correct = i; markDirty(); drawQs(); } }), "juist")));
+      return h("div", { class: "qcard" },
+        h("div", { class: "qcard-head" }, h("span", { class: "qnum" }, "Vraag " + (idx + 1)),
+          h("select", { class: "input", style: { width: "auto" }, disabled: ro, "aria-label": "Tijd", id: "t-" + idx, onchange: e => { it.time_limit = +e.target.value; markDirty(); } },
+            [10, 20, 30, 45, 60, 90].map(t => h("option", { value: t, selected: it.time_limit === t }, t + " sec"))),
+          !ro && h("button", { class: "btn ghost small", type: "button", disabled: idx === 0, "aria-label": "Omhoog", onclick: () => { [items[idx - 1], items[idx]] = [items[idx], items[idx - 1]]; markDirty(); drawQs(); } }, "↑"),
+          !ro && h("button", { class: "btn ghost small", type: "button", disabled: idx === items.length - 1, "aria-label": "Omlaag", onclick: () => { [items[idx + 1], items[idx]] = [items[idx], items[idx + 1]]; markDirty(); drawQs(); } }, "↓"),
+          !ro && h("button", { class: "btn ghost small", type: "button", onclick: () => { items.splice(idx + 1, 0, Object.assign({}, it, { id: null, options: [...it.options] })); markDirty(); drawQs(); } }, "Dupliceren"),
+          !ro && h("button", { class: "btn ghost small danger", type: "button", onclick: () => { items.splice(idx, 1); markDirty(); drawQs(); } }, "Verwijderen")),
+        h("textarea", { class: "input", rows: "2", maxlength: "300", placeholder: "Typ je vraag", disabled: ro, id: "q-" + idx, value: it.text, oninput: e => { it.text = e.target.value; markDirty(); } }),
+        h("div", { class: "opts" }, opts));
+    }) : [h("div", { class: "empty" }, "Nog geen vragen. Voeg een vraag toe of importeer een lijst.")]));
+  };
+
+  const save = async () => {
+    const t = title.value.trim();
+    if (!t) return toast("Geef de quiz een titel.", true);
+    const rows = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const filled = it.options.map((o, j) => ({ o: o.trim(), j })).filter(x => x.o);
+      if (!it.text.trim()) return toast("Vraag " + (i + 1) + " heeft nog geen tekst.", true);
+      if (filled.length < 2) return toast("Vraag " + (i + 1) + " heeft minstens 2 antwoorden nodig.", true);
+      const ci = filled.findIndex(x => x.j === it.correct);
+      if (ci < 0) return toast("Duid bij vraag " + (i + 1) + " een ingevuld antwoord aan als juist.", true);
+      if (!it.id) it.id = crypto.randomUUID();
+      rows.push({ id: it.id, quiz_id: quizId, position: i, text: it.text.trim().slice(0, 300), options: filled.map(x => x.o), correct: ci, time_limit: it.time_limit });
+    }
+    try {
+      must(await sb.from("kq_quizzes").update({ title: t }).eq("id", quizId));
+      const removed = originalIds.filter(id => !rows.some(r => r.id === id));
+      if (removed.length) must(await sb.from("kq_questions").delete().in("id", removed));
+      if (rows.length) must(await sb.from("kq_questions").upsert(rows));
+      dirty = false; toast("Quiz bewaard"); editorView(quizId);
+    } catch (e) { toast("Bewaren mislukt: " + e.message, true); }
+  };
+
+  const importTa = h("textarea", { class: "input", rows: "8", id: "import-ta", placeholder: "Wat is de hoofdstad van België?\n*Brussel\nAntwerpen\nGent\nLuik" });
+  const importBox = !ro && h("details", { class: "panel" }, h("summary", null, "Vragen importeren uit tekst"),
+    h("div", { class: "stack", style: { marginTop: "12px" } },
+      h("p", { class: "small muted" }, "Plak vragen in dit formaat. Zet een * voor het juiste antwoord en laat een witregel tussen de vragen. Zo kan Claude ook een quiz uit je cursus voor je klaarzetten."),
+      h("pre", { class: "fmt" }, "Welke rivier stroomt door Antwerpen?\n*Schelde\nMaas\nIJzer\n\nHoeveel provincies telt België?\nNegen\n*Tien\nElf"),
+      importTa,
+      h("button", { class: "btn", type: "button", onclick: () => {
+        const add = parseImport(importTa.value);
+        if (!add.length) return toast("Geen vragen herkend. Kijk het formaat na.", true);
+        items.push(...add); importTa.value = ""; markDirty(); drawQs(); toast(add.length + " vragen toegevoegd. Vergeet niet te bewaren.");
+      } }, "Toevoegen aan quiz")));
+
+  // Sharing (owner only)
+  const sharePanel = role === "owner" && (() => {
+    const em = h("input", { class: "input", type: "email", placeholder: "collega@school.be", id: "share-email" });
+    const rl = h("select", { class: "input", style: { width: "auto" }, id: "share-role" }, h("option", { value: "view" }, "Bekijken en spelen"), h("option", { value: "edit" }, "Bewerken"));
+    return h("div", { class: "panel stack" },
+      h("h3", null, "Delen met collega's"),
+      h("p", { class: "small muted" }, "Je collega logt in met dit e-mailadres en ziet de quiz onder ‘Gedeeld met mij’. De quiz blijft van jou. Je collega speelt hem met de eigen klas en ziet alleen de eigen scores."),
+      h("form", { class: "row", onsubmit: async e => {
+        e.preventDefault(); const v = em.value.trim().toLowerCase();
+        if (!v.includes("@")) return toast("Vul een geldig e-mailadres in.", true);
+        if (v === me.email) return toast("Dat is je eigen e-mailadres.", true);
+        try { must(await sb.from("kq_shares").upsert({ quiz_id: quizId, email: v, role: rl.value }, { onConflict: "quiz_id,email" })); toast("Gedeeld met " + v); editorView(quizId); } catch (err) { toast(err.message, true); }
+      } }, h("div", { style: { flex: "1", minWidth: "180px" } }, em), rl, h("button", { class: "btn primary", type: "submit" }, "Delen")),
+      h("div", null, shares.length ? shares.map(s => h("div", { class: "listline" },
+        h("span", { class: "grow" }, s.email),
+        h("select", { class: "input", style: { width: "auto" }, "aria-label": "Recht voor " + s.email, onchange: async e => {
+          try { must(await sb.from("kq_shares").update({ role: e.target.value }).eq("id", s.id)); toast("Recht aangepast"); } catch (err) { toast(err.message, true); }
+        } }, h("option", { value: "view", selected: s.role === "view" }, "Bekijken en spelen"), h("option", { value: "edit", selected: s.role === "edit" }, "Bewerken")),
+        confirmBtn("Intrekken", async () => { try { must(await sb.from("kq_shares").delete().eq("id", s.id)); editorView(quizId); } catch (err) { toast(err.message, true); } }, "btn danger small")))
+        : h("p", { class: "small muted" }, "Nog met niemand gedeeld.")));
+  })();
+
+  // Self-paced openings
+  const deadlineIn = h("input", { class: "input", type: "datetime-local", id: "self-deadline", style: { width: "auto" } });
+  const selfPanel = h("div", { class: "panel stack", id: "self-panel" },
+    h("h3", null, "Zelfstandig laten maken"),
+    h("p", { class: "small muted" }, "Leerlingen maken de quiz op hun eigen moment, bijvoorbeeld na het hoofdstuk. Ze zien na elke vraag of hun antwoord juist was. Elke leerling kan de quiz één keer maken."),
+    h("form", { class: "row", onsubmit: async e => {
+      e.preventDefault();
+      if (!items.length || dirty) return toast(dirty ? "Bewaar eerst je wijzigingen." : "Voeg eerst vragen toe.", true);
+      try {
+        const code = await rpc("kq2_gen_code");
+        must(await sb.from("kq_assignments").insert({ quiz_id: quizId, code, deadline: deadlineIn.value ? new Date(deadlineIn.value).toISOString() : null }));
+        toast("Quiz staat open met code " + code); editorView(quizId, "self");
+      } catch (err) { toast(err.message, true); }
+    } }, h("label", { class: "field" }, h("span", { class: "label" }, "Deadline (optioneel)"), deadlineIn), h("button", { class: "btn primary", type: "submit", style: { alignSelf: "end" } }, "Openzetten")),
+    h("div", null, assigns.map(a => {
+      const expired = a.deadline && new Date(a.deadline) < new Date();
+      return h("div", { class: "listline" },
+        h("div", { class: "grow" },
+          h("div", { class: "codebox num" }, a.code),
+          h("div", { class: "small muted" }, a.deadline ? "Deadline " + fmtDate(a.deadline) : "Geen deadline", " · gemaakt op " + fmtDate(a.created_at)),
+          h("div", { class: "small", style: { overflowWrap: "anywhere" } }, isHosted() ? joinUrl(a.code) : "")),
+        h("span", { class: "chip" + (a.is_open && !expired ? "" : " grey") }, a.is_open ? (expired ? "Deadline voorbij" : "Open") : "Gesloten"),
+        isHosted() && h("button", { class: "btn small", type: "button", onclick: async () => {
+          try { await navigator.clipboard.writeText(joinUrl(a.code)); toast("Link gekopieerd"); } catch (e) { toast("Kopiëren lukt niet. Selecteer de link en kopieer hem zelf.", true); }
+        } }, "Kopieer link"),
+        h("button", { class: "btn small", type: "button", onclick: async () => {
+          try { must(await sb.from("kq_assignments").update({ is_open: !a.is_open }).eq("id", a.id)); editorView(quizId, "self"); } catch (e) { toast(e.message, true); }
+        } }, a.is_open ? "Sluiten" : "Heropenen"));
+    })));
+
+  drawQs();
+  mount(teacherShell([
+    h("div", { class: "row", style: { marginBottom: "16px" } }, h("button", { class: "btn ghost", type: "button", onclick: () => { tab = "quizzen"; teacherHome(); } }, "← Alle quizzen"),
+      ro && h("span", { class: "chip grey" }, "Alleen bekijken en spelen"), role === "edit" && h("span", { class: "chip" }, "Gedeeld, je mag bewerken")),
+    h("div", { class: "grid2" },
+      h("div", { class: "stack" }, title, qWrap,
+        !ro && h("div", { class: "row" }, h("button", { class: "btn", type: "button", onclick: () => { items.push({ id: null, text: "", options: ["", "", "", ""], correct: 0, time_limit: 20 }); markDirty(); drawQs(); setTimeout(() => { const el = document.getElementById("q-" + (items.length - 1)); if (el) { el.focus(); el.scrollIntoView({ block: "center" }); } }, 30); } }, "+ Vraag toevoegen")),
+        importBox),
+      h("div", { class: "stack" },
+        h("div", { class: "panel stack" }, h("h3", null, "Live spelen in de klas"),
+          h("p", { class: "small muted" }, "Zet de quiz op het bord. Leerlingen doen mee met de code op hun gsm of laptop."),
+          h("button", { class: "btn primary big", type: "button", onclick: () => dirty ? toast("Bewaar eerst je wijzigingen.", true) : (items.length ? hostView(quizId) : toast("Voeg eerst vragen toe.", true)) }, "Start live")),
+        selfPanel, sharePanel)),
+    !ro && h("div", { class: "savebar" }, saveState, h("span", { style: { flex: "1" } }),
+      role === "owner" && confirmBtn("Quiz verwijderen", async () => { try { must(await sb.from("kq_quizzes").delete().eq("id", quizId)); toast("Quiz verwijderd"); tab = "quizzen"; teacherHome(); } catch (e) { toast(e.message, true); } }),
+      h("button", { class: "btn primary", type: "button", onclick: save }, "Bewaren"))
+  ]));
+  if (focus === "self") setTimeout(() => document.getElementById("self-panel").scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+}
+
+/* ---------- Live host ---------- */
+async function hostView(quizId) {
+  stopLoops();
+  mount(stageShell([h("span", null, "Klasquiz")], h("div", { class: "spinner", style: { margin: "0 auto" } })));
+  let quiz, qs, session;
+  try {
+    quiz = must(await sb.from("kq_quizzes").select("id, title").eq("id", quizId).single());
+    qs = must(await sb.from("kq_questions").select("*").eq("quiz_id", quizId).order("position").order("id"));
+    const code = await rpc("kq2_gen_code");
+    session = must(await sb.from("kq_sessions").insert({ quiz_id: quizId, code }).select().single());
+  } catch (e) { toast("Starten mislukt: " + e.message, true); return teacherHome(); }
+
+  let players = []; // {id, score, name}
+  let idx = -1, phase = "lobby", deadline = 0, revealed = false;
+  const top = h("div", { class: "stage-top" });
+  const main = h("div", { class: "stage-main" });
+  const root = h("div", { class: "stage" }, top, main);
+  mount(root);
+
+  const fsBtn = h("button", { class: "btn ghost small", type: "button", onclick: () => {
+    try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {}
+  } }, "Volledig scherm");
+  const stopBtn = confirmBtn("Stoppen", async () => { await setState("finished", idx); stopLoops(); teacherHome(); }, "btn ghost small");
+  const setTop = (left) => top.replaceChildren(h("span", { class: "grow" }, left), h("span", { class: "num" }, "Code " + session.code), fsBtn, stopBtn);
+
+  async function setState(status, i) { await rpc("kq2_host_set", { p_session: session.id, p_status: status, p_index: i }); }
+  async function refreshPlayers() {
+    const rows = must(await sb.from("kq_attempts").select("id, score, kq_students(name)").eq("session_id", session.id));
+    players = rows.map(r => ({ id: r.id, score: r.score, name: r.kq_students ? r.kq_students.name : "?" })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  }
+  async function answersFor(qid) {
+    const ids = players.map(p => p.id);
+    if (!ids.length) return [];
+    return must(await sb.from("kq_answers").select("chosen, attempt_id").eq("question_id", qid).in("attempt_id", ids));
+  }
+
+  // Lobby
+  function lobby() {
+    phase = "lobby"; setTop(quiz.title);
+    const qrBox = h("div", { class: "qr" });
+    const names = h("div", { class: "names" });
+    const count = h("span", null, "0");
+    const startBtn = h("button", { class: "btn big", type: "button", onclick: () => { stopLoops(); question(0); } }, "Start de quiz");
+    main.replaceChildren(
+      h("div", { class: "lobby" },
+        h("div", { class: "stack" },
+          h("p", { class: "joinurl" }, isHosted() ? ["Ga naar ", h("b", null, location.host + location.pathname), " en vul de code in"] : "Open deze app via een webadres zodat leerlingen kunnen meedoen."),
+          h("div", { class: "bigcode num" }, session.code)),
+        isHosted() ? qrBox : null),
+      h("div", { class: "row between" }, h("h2", null, count, " leerlingen doen mee"), startBtn),
+      names);
+    if (isHosted() && window.QRCode) { try { new QRCode(qrBox, { text: joinUrl(session.code), width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {} }
+    let shown = new Set();
+    every(1500, async () => {
+      await refreshPlayers();
+      count.textContent = players.length;
+      players.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(p => { if (!shown.has(p.id)) { shown.add(p.id); names.append(h("span", null, p.name)); } });
+    });
+  }
+
+  // Question
+  async function question(i) {
+    idx = i; phase = "question"; revealed = false;
+    const q = qs[i];
+    await setState("question", i);
+    deadline = Date.now() + q.time_limit * 1000;
+    setTop("Vraag " + (i + 1) + " van " + qs.length);
+    const clock = h("div", { class: "bigclock" }, q.time_limit);
+    const answeredEl = h("div", { class: "num", style: { fontFamily: "var(--f-display)", fontWeight: 800, fontSize: "2.4rem", textAlign: "center", lineHeight: 1 } }, "0");
+    main.replaceChildren(
+      h("div", { class: "qtext" }, q.text),
+      h("div", { class: "row between", style: { flexWrap: "nowrap" } }, clock,
+        h("div", { style: { textAlign: "center" } }, answeredEl, h("div", { class: "label", style: { color: "var(--chalk-dim)" } }, "antwoorden")),
+        h("button", { class: "btn ghost", type: "button", onclick: () => reveal(i) }, "Nu afsluiten")),
+      h("div", { class: "answers" }, q.options.map((o, j) => ansButton(j, o, { disabled: true }))));
+    every(250, () => { clock.textContent = Math.ceil(Math.max(0, deadline - Date.now()) / 1000); });
+    every(1000, async () => {
+      await refreshPlayers();
+      const ans = await answersFor(q.id);
+      answeredEl.textContent = ans.length + " / " + players.length;
+      if (!revealed && (Date.now() >= deadline || (players.length > 0 && ans.length >= players.length))) reveal(i);
+    });
+  }
+
+  async function reveal(i) {
+    if (revealed) return; revealed = true;
+    stopLoops(); phase = "reveal";
+    const q = qs[i];
+    await setState("reveal", i);
+    await refreshPlayers();
+    const ans = await answersFor(q.id);
+    const counts = q.options.map((_, j) => ans.filter(a => a.chosen === j).length);
+    const right = counts[q.correct];
+    const last = i >= qs.length - 1;
+    main.replaceChildren(
+      h("div", { class: "qtext" }, q.text),
+      h("div", { class: "answers" }, q.options.map((o, j) => {
+        const b = ansButton(j, o, { disabled: true, class: "ans ans-" + j + (j === q.correct ? " win" : " dim") });
+        b.append(h("span", { class: "cnt" }, counts[j]));
+        return b;
+      })),
+      h("div", { class: "row between" },
+        h("h2", null, right + " van " + players.length + " juist"),
+        h("button", { class: "btn big", type: "button", onclick: () => last ? finish() : scoreboard(i) }, last ? "Eindstand" : "Tussenstand")));
+  }
+
+  function scoreboard(i) {
+    phase = "board";
+    setTop("Tussenstand na vraag " + (i + 1));
+    main.replaceChildren(
+      h("h1", { style: { textAlign: "center" } }, "Tussenstand"),
+      h("div", { class: "board-list" }, players.slice(0, 5).map((p, k) => h("div", { class: "board-row" },
+        h("span", { class: "medal num" + (k < 3 ? " m" + (k + 1) : "") }, k + 1), h("span", { class: "n" }, p.name), h("span", { class: "s" }, fmtNum(p.score))))),
+      h("div", { class: "row", style: { justifyContent: "center" } }, h("button", { class: "btn big", type: "button", onclick: () => question(i + 1) }, "Volgende vraag")));
+  }
+
+  async function finish() {
+    await setState("finished", idx);
+    await refreshPlayers();
+    setTop(quiz.title + " · Eindstand");
+    top.lastChild.replaceWith(h("button", { class: "btn ghost small", type: "button", onclick: () => { stopLoops(); teacherHome(); } }, "Sluiten"));
+    main.replaceChildren(
+      h("h1", { style: { textAlign: "center" } }, "Eindstand"),
+      podium(players),
+      h("div", { class: "board-list" }, players.slice(3, 10).map((p, k) => h("div", { class: "board-row" },
+        h("span", { class: "medal num" }, k + 4), h("span", { class: "n" }, p.name), h("span", { class: "s" }, fmtNum(p.score))))));
+  }
+
+  lobby();
+}
+
+/* ---------- Scores ---------- */
+let scoreFilter = "all", scoreSort = { key: "total", dir: -1 };
+async function scoresView() {
+  loadingPage();
+  let d, attempts, students;
+  try {
+    d = await fetchAll();
+    attempts = must(await sb.from("kq_attempts").select("id, quiz_id, student_id, mode, score, started_at, finished_at").eq("owner_id", me.id));
+    students = must(await sb.from("kq_students").select("id, name").eq("owner_id", me.id).order("name"));
+  } catch (e) { mount(teacherShell(h("p", { class: "err" }, "Laden mislukt: " + e.message))); return; }
+
+  const playedQuizIds = new Set(attempts.map(a => a.quiz_id));
+  const quizzes = d.quizzes.filter(q => q.owner_id === me.id || playedQuizIds.has(q.id));
+  const groupOf = q => q.owner_id === me.id ? q.subject_id : "shared";
+  const groups = d.subjects.filter(s => s.owner_id === me.id).map(s => ({ id: s.id, name: s.name }));
+  if (quizzes.some(q => q.owner_id !== me.id)) groups.push({ id: "shared", name: "Gedeelde quizzen" });
+
+  // best attempt per student per quiz
+  const best = {};
+  for (const a of attempts) {
+    const k = a.student_id + "|" + a.quiz_id;
+    if (!best[k] || a.score > best[k].score) best[k] = a;
+  }
+  let scope;
+  if (scoreFilter === "all") scope = quizzes;
+  else if (scoreFilter.startsWith("g:")) scope = quizzes.filter(q => groupOf(q) === scoreFilter.slice(2));
+  else scope = quizzes.filter(q => q.id === scoreFilter.slice(2));
+  if (!scope.length && scoreFilter !== "all") { scoreFilter = "all"; return scoresView(); }
+  const single = scoreFilter.startsWith("q:") ? scope[0] : null;
+
+  const rows = students.map(s => {
+    const mine = scope.map(q => best[s.id + "|" + q.id]).filter(Boolean);
+    const total = mine.reduce((t, a) => t + a.score, 0);
+    const r = { id: s.id, name: s.name, total, played: mine.length, avg: mine.length ? total / mine.length : 0 };
+    if (single) { const a = mine[0]; r.attempt = a; r.status = !a ? "niet gemaakt" : a.finished_at ? "afgewerkt" : "bezig"; r.mode = a ? (a.mode === "live" ? "Live" : "Zelfstandig") : ""; r.when = a ? a.started_at : ""; }
+    return r;
+  });
+  const rankSorted = rows.slice().sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  rankSorted.forEach((r, i) => { r.rank = (i > 0 && rankSorted[i - 1].total === r.total) ? rankSorted[i - 1].rank : i + 1; });
+  const k = scoreSort.key, dir = scoreSort.dir;
+  rows.sort((a, b) => { const x = a[k], y = b[k]; return (typeof x === "string" ? x.localeCompare(y) : (x || 0) - (y || 0)) * dir || a.rank - b.rank; });
+
+  const sel = h("select", { class: "input", style: { width: "auto", minWidth: "240px", maxWidth: "100%" }, id: "score-filter", onchange: e => { scoreFilter = e.target.value; scoresView(); } },
+    h("option", { value: "all", selected: scoreFilter === "all" }, "Algemeen klasklassement"),
+    groups.map(g => h("optgroup", { label: g.name },
+      h("option", { value: "g:" + g.id, selected: scoreFilter === "g:" + g.id }, "Heel het vak " + g.name),
+      quizzes.filter(q => groupOf(q) === g.id).map(q => h("option", { value: "q:" + q.id, selected: scoreFilter === "q:" + q.id }, "Quiz: " + q.title)))));
+  const scopeName = scoreFilter === "all" ? "Algemeen" : single ? single.title : (groups.find(g => "g:" + g.id === scoreFilter) || {}).name;
+
+  const th = (key, label, r) => h("th", { class: r ? "r" : null, scope: "col", "aria-sort": scoreSort.key === key ? (scoreSort.dir > 0 ? "ascending" : "descending") : null,
+    onclick: () => { scoreSort = { key, dir: scoreSort.key === key ? -scoreSort.dir : (key === "name" ? 1 : -1) }; scoresView(); } }, label + (scoreSort.key === key ? (scoreSort.dir > 0 ? " ▲" : " ▼") : ""));
+
+  const table = h("div", { class: "tablewrap" }, h("table", null,
+    h("thead", null, h("tr", null, th("rank", "#"), th("name", "Leerling"), th("total", "Punten", true),
+      single ? [th("mode", "Manier"), th("status", "Status"), th("when", "Wanneer"), h("th", null, "")] : [th("played", "Gespeeld", true), th("avg", "Gemiddelde per quiz", true)])),
+    h("tbody", null, rows.length ? rows.map(r => h("tr", null,
+      h("td", null, h("span", { class: "medal" + (r.rank <= 3 && r.total > 0 ? " m" + r.rank : "") }, r.rank)),
+      h("td", null, r.name), h("td", { class: "r" }, fmtNum(r.total)),
+      single ? [h("td", null, r.mode), h("td", null, h("span", { class: "chip" + (r.status === "afgewerkt" ? "" : r.status === "bezig" ? " warn" : " grey") }, r.status)),
+        h("td", { class: "muted" }, fmtDate(r.when)),
+        h("td", null, r.attempt ? confirmBtn("Poging wissen", async () => {
+          try { must(await sb.from("kq_attempts").delete().eq("student_id", r.id).eq("quiz_id", single.id).eq("owner_id", me.id)); toast("Poging gewist. " + r.name + " kan de quiz opnieuw maken."); scoresView(); } catch (e) { toast(e.message, true); }
+        }, "btn danger small") : "")]
+        : [h("td", { class: "r" }, r.played + " / " + scope.length), h("td", { class: "r" }, r.played ? fmtNum(r.avg) : "–")]))
+      : h("tr", null, h("td", { colspan: "6", class: "muted" }, "Nog geen leerlingen of scores.")))));
+
+  const exportCsv = () => {
+    const head = single ? ["Plaats", "Leerling", "Punten", "Manier", "Status", "Wanneer"] : ["Plaats", "Leerling", "Punten", "Gespeeld", "Aantal quizzen", "Gemiddelde"];
+    const lines = [head].concat(rankSorted.map(r => single ? [r.rank, r.name, r.total, r.mode, r.status, r.when ? fmtDate(r.when) : ""] : [r.rank, r.name, r.total, r.played, scope.length, Math.round(r.avg)]));
+    const csv = "﻿" + lines.map(l => l.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n");
+    const a = h("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })), download: "klasquiz-" + (scopeName || "scores").replace(/[^\w-]+/g, "_") + ".csv" });
+    document.body.append(a); a.click(); a.remove();
+  };
+  const showPodium = () => {
+    const ov = h("div", { class: "overlay" }, h("div", { class: "stage" },
+      h("div", { class: "stage-top" }, h("span", { class: "grow" }, "Klasklassement · " + scopeName), h("button", { class: "btn ghost small", type: "button", onclick: () => ov.remove() }, "Sluiten")),
+      h("div", { class: "stage-main" }, h("h1", { style: { textAlign: "center" } }, "De beste van de klas"),
+        podium(rankSorted.filter(r => r.total > 0).map(r => ({ name: r.name, score: r.total }))),
+        h("div", { class: "board-list" }, rankSorted.filter(r => r.total > 0).slice(3, 10).map((r, i) => h("div", { class: "board-row" },
+          h("span", { class: "medal num" }, i + 4), h("span", { class: "n" }, r.name), h("span", { class: "s" }, fmtNum(r.total))))))));
+    document.body.append(ov);
+  };
+
+  mount(teacherShell([
+    h("div", { class: "page-head" }, h("div", { class: "stack tight" }, h("p", { class: "label" }, "Scores"), h("h1", null, scopeName)),
+      h("div", { class: "row" }, sel, h("button", { class: "btn", type: "button", onclick: exportCsv }, "Exporteer naar Excel"), h("button", { class: "btn primary", type: "button", onclick: showPodium }, "Toon podium op bord"))),
+    h("p", { class: "small muted", style: { marginBottom: "14px" } }, single
+      ? "Per quiz telt de beste poging. Live: 500 tot 1000 punten per juist antwoord, afhankelijk van de snelheid. Zelfstandig: 750 punten per juist antwoord."
+      : "Totaal van de beste poging per quiz. Een gemiste quiz telt als 0. Het gemiddelde rekent alleen de gespeelde quizzen mee, dat is eerlijker voor wie afwezig was."),
+    table
+  ]));
+}
+
+boot();
+</script>
+</body>
+</html>
