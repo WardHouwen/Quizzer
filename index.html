@@ -1003,12 +1003,18 @@ async function hostView(quizId) {
 let scoreFilter = "all", scoreSort = { key: "total", dir: -1 };
 async function scoresView() {
   loadingPage();
-  let d, attempts, students;
+  let d, attempts, students, stats;
   try {
     d = await fetchAll();
-    attempts = must(await sb.from("kq_attempts").select("id, quiz_id, student_id, mode, score, started_at, finished_at").eq("owner_id", me.id));
+    attempts = must(await sb.from("kq_attempts").select("id, quiz_id, student_id, mode, score, started_at, finished_at").eq("owner_id", me.id).limit(10000));
     students = must(await sb.from("kq_students").select("id, name").eq("owner_id", me.id).order("name"));
+    stats = must(await sb.rpc("kq2_attempt_stats").limit(10000));
   } catch (e) { mount(teacherShell(h("p", { class: "err" }, "Laden mislukt: " + e.message))); return; }
+  const rightOf = {};
+  for (const s of stats) rightOf[s.attempt_id] = s.n_right;
+  const qTotal = {};
+  for (const q of d.quizzes) qTotal[q.id] = qCount(q);
+  const pct = (r, t) => t ? Math.round(100 * r / t) + "%" : "–";
 
   const playedQuizIds = new Set(attempts.map(a => a.quiz_id));
   const quizzes = d.quizzes.filter(q => q.owner_id === me.id || playedQuizIds.has(q.id));
@@ -1032,7 +1038,10 @@ async function scoresView() {
   const rows = students.map(s => {
     const mine = scope.map(q => best[s.id + "|" + q.id]).filter(Boolean);
     const total = mine.reduce((t, a) => t + a.score, 0);
-    const r = { id: s.id, name: s.name, total, played: mine.length, avg: mine.length ? total / mine.length : 0 };
+    const right = mine.reduce((t, a) => t + (rightOf[a.id] || 0), 0);
+    const asked = mine.reduce((t, a) => t + (qTotal[a.quiz_id] || 0), 0);
+    const r = { id: s.id, name: s.name, total, played: mine.length, avg: mine.length ? total / mine.length : 0,
+      right, asked, ratio: asked ? right / asked : -1 };
     if (single) { const a = mine[0]; r.attempt = a; r.status = !a ? "niet gemaakt" : a.finished_at ? "afgewerkt" : "bezig"; r.mode = a ? (a.mode === "live" ? "Live" : "Zelfstandig") : ""; r.when = a ? a.started_at : ""; }
     return r;
   });
@@ -1052,22 +1061,27 @@ async function scoresView() {
     onclick: () => { scoreSort = { key, dir: scoreSort.key === key ? -scoreSort.dir : (key === "name" ? 1 : -1) }; scoresView(); } }, label + (scoreSort.key === key ? (scoreSort.dir > 0 ? " ▲" : " ▼") : ""));
 
   const table = h("div", { class: "tablewrap" }, h("table", null,
-    h("thead", null, h("tr", null, th("rank", "#"), th("name", "Leerling"), th("total", "Punten", true),
+    h("thead", null, h("tr", null, th("rank", "#"), th("name", "Leerling"), th("total", "Punten", true), th("ratio", "Juist", true),
       single ? [th("mode", "Manier"), th("status", "Status"), th("when", "Wanneer"), h("th", null, "")] : [th("played", "Gespeeld", true), th("avg", "Gemiddelde per quiz", true)])),
     h("tbody", null, rows.length ? rows.map(r => h("tr", null,
       h("td", null, h("span", { class: "medal" + (r.rank <= 3 && r.total > 0 ? " m" + r.rank : "") }, r.rank)),
       h("td", null, r.name), h("td", { class: "r" }, fmtNum(r.total)),
+      h("td", { class: "r" }, r.asked ? [h("b", null, r.right + " / " + r.asked), h("span", { class: "muted" }, " · " + pct(r.right, r.asked))] : "–"),
       single ? [h("td", null, r.mode), h("td", null, h("span", { class: "chip" + (r.status === "afgewerkt" ? "" : r.status === "bezig" ? " warn" : " grey") }, r.status)),
         h("td", { class: "muted" }, fmtDate(r.when)),
         h("td", null, r.attempt ? confirmBtn("Poging wissen", async () => {
           try { must(await sb.from("kq_attempts").delete().eq("student_id", r.id).eq("quiz_id", single.id).eq("owner_id", me.id)); toast("Poging gewist. " + r.name + " kan de quiz opnieuw maken."); scoresView(); } catch (e) { toast(e.message, true); }
         }, "btn danger small") : "")]
         : [h("td", { class: "r" }, r.played + " / " + scope.length), h("td", { class: "r" }, r.played ? fmtNum(r.avg) : "–")]))
-      : h("tr", null, h("td", { colspan: "6", class: "muted" }, "Nog geen leerlingen of scores.")))));
+      : h("tr", null, h("td", { colspan: "8", class: "muted" }, "Nog geen leerlingen of scores.")))));
 
   const exportCsv = () => {
-    const head = single ? ["Plaats", "Leerling", "Punten", "Manier", "Status", "Wanneer"] : ["Plaats", "Leerling", "Punten", "Gespeeld", "Aantal quizzen", "Gemiddelde"];
-    const lines = [head].concat(rankSorted.map(r => single ? [r.rank, r.name, r.total, r.mode, r.status, r.when ? fmtDate(r.when) : ""] : [r.rank, r.name, r.total, r.played, scope.length, Math.round(r.avg)]));
+    const head = single ? ["Plaats", "Leerling", "Punten", "Juist", "Van", "Percentage", "Manier", "Status", "Wanneer"]
+      : ["Plaats", "Leerling", "Punten", "Juist", "Van", "Percentage", "Gespeeld", "Aantal quizzen", "Gemiddelde"];
+    const lines = [head].concat(rankSorted.map(r => {
+      const base = [r.rank, r.name, r.total, r.asked ? r.right : "", r.asked || "", r.asked ? pct(r.right, r.asked) : ""];
+      return single ? base.concat([r.mode, r.status, r.when ? fmtDate(r.when) : ""]) : base.concat([r.played, scope.length, Math.round(r.avg)]);
+    }));
     const csv = "﻿" + lines.map(l => l.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })), download: "klasquiz-" + (scopeName || "scores").replace(/[^\w-]+/g, "_") + ".csv" });
     document.body.append(a); a.click(); a.remove();
@@ -1087,7 +1101,7 @@ async function scoresView() {
       h("div", { class: "row" }, sel, h("button", { class: "btn", type: "button", onclick: exportCsv }, "Exporteer naar Excel"), h("button", { class: "btn primary", type: "button", onclick: showPodium }, "Toon podium op bord"))),
     h("p", { class: "small muted", style: { marginBottom: "14px" } }, single
       ? "Per quiz telt de beste poging. Live: 500 tot 1000 punten per juist antwoord, afhankelijk van de snelheid. Zelfstandig: 750 punten per juist antwoord."
-      : "Totaal van de beste poging per quiz. Een gemiste quiz telt als 0. Het gemiddelde rekent alleen de gespeelde quizzen mee, dat is eerlijker voor wie afwezig was."),
+      : "Totaal van de beste poging per quiz. ‘Juist’ telt de juiste antwoorden op alle vragen van de gespeelde quizzen. Een gemiste quiz telt als 0 punten. Het gemiddelde rekent alleen de gespeelde quizzen mee, dat is eerlijker voor wie afwezig was."),
     table
   ]));
 }
